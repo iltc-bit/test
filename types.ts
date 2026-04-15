@@ -1,19 +1,16 @@
 
-export interface JournalMetadata {
+export interface Platform {
   id: string;
   name: string;
-  url: string;
-  description: string;
-  rulesSummary: string;
+  width: number;
+  height: number;
+  category: string;
+  note?: string;
 }
 
-export interface ProcessingState {
-  status: 'idle' | 'reading' | 'analyzing' | 'generating' | 'completed' | 'error';
+export type ProcessStatus = 'idle' | 'processing' | 'done' | 'error';
+
+export interface ProcessState {
+  status: ProcessStatus;
   message: string;
-  error?: string;
-}
-
-export interface FormattedDocument {
-  title: string;
-  references: string[];
 }
