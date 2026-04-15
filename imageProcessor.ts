@@ -21,10 +21,6 @@ async function fileToBase64(file: File): Promise<string> {
   });
 }
 
-/**
- * Find the visual "center of weight" of an image using gradient-magnitude
- * saliency (sampled at low resolution for performance).
- */
 function findSalientCenter(
   img: HTMLImageElement,
   srcW: number,
@@ -55,7 +51,6 @@ function findSalientCenter(
       const gy = Math.abs(data[dn] - data[up]) + Math.abs(data[dn+1] - data[up+1]) + Math.abs(data[dn+2] - data[up+2]);
       let w = Math.sqrt(gx * gx + gy * gy) / 3;
 
-      // Gentle center bias so purely uniform images don't centre at edge
       const dx = x / SW - 0.5;
       const dy = y / SH - 0.5;
       w += Math.exp(-(dx * dx + dy * dy) * 6) * 30;
@@ -72,19 +67,6 @@ function findSalientCenter(
   };
 }
 
-// ── Canvas processing ─────────────────────────────────────────────────────────
-
-/**
- * Canvas-based smart resize.
- *
- * Strategy:
- *   • ratio factor < 1.35  →  scale-to-cover + salient-aware crop
- *   • ratio factor ≥ 1.35  →  "album-art" bokeh background + fitted original
- *
- * The "album-art" technique (blurred, slightly darkened scaled-to-cover layer
- * behind the crisp letterboxed original) is far more professional than a solid
- * colour fill and requires no AI API call.
- */
 export function canvasSmartResize(
   img: HTMLImageElement,
   srcW: number,
@@ -92,7 +74,6 @@ export function canvasSmartResize(
   targetW: number,
   targetH: number
 ): string {
-  // Cap to reasonable canvas dimensions (prevents OOM on large targets)
   const MAX_DIM = 3000;
   const dimScale = Math.min(1, MAX_DIM / Math.max(targetW, targetH));
   const outW = Math.round(targetW * dimScale);
@@ -108,7 +89,6 @@ export function canvasSmartResize(
   const ratioFactor = Math.max(srcRatio, tgtRatio) / Math.min(srcRatio, tgtRatio);
 
   if (ratioFactor < 1.35) {
-    // ── Scale-to-cover + salient crop ────────────────────────────────────────
     const scale = Math.max(outW / srcW, outH / srcH);
     const scaledW = srcW * scale;
     const scaledH = srcH * scale;
@@ -120,7 +100,6 @@ export function canvasSmartResize(
     const cropX = Math.max(0, Math.min(salientX - outW / 2, scaledW - outW));
     const cropY = Math.max(0, Math.min(salientY - outH / 2, scaledH - outH));
 
-    // Draw: source crop → output
     ctx.drawImage(
       img,
       cropX / scale, cropY / scale,
@@ -128,12 +107,10 @@ export function canvasSmartResize(
       0, 0, outW, outH
     );
   } else {
-    // ── Bokeh background + fitted original ───────────────────────────────────
     const fitScale = Math.min(outW / srcW, outH / srcH);
     const fitW = Math.round(srcW * fitScale);
     const fitH = Math.round(srcH * fitScale);
 
-    // Layer 1: blurred + slightly darkened scale-to-cover background
     const bgScale = Math.max(outW / srcW, outH / srcH) * 1.08;
     const bgW = srcW * bgScale;
     const bgH = srcH * bgScale;
@@ -144,7 +121,6 @@ export function canvasSmartResize(
     ctx.drawImage(img, bgX, bgY, bgW, bgH);
     ctx.filter = 'none';
 
-    // Layer 2: subtle dark vignette overlay to separate bg from fg visually
     const grad = ctx.createRadialGradient(
       outW / 2, outH / 2, Math.min(outW, outH) * 0.3,
       outW / 2, outH / 2, Math.max(outW, outH) * 0.75
@@ -154,9 +130,6 @@ export function canvasSmartResize(
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, outW, outH);
 
-    // Layer 3: sharp fitted original, centred on salient point.
-    // In bokeh branch fitW <= outW and fitH <= outH always holds (scale-to-fit),
-    // so valid paste ranges are [0, outW-fitW] and [0, outH-fitH].
     const { x: sx, y: sy } = findSalientCenter(img, srcW, srcH);
     const salientFitX = sx * fitScale;
     const salientFitY = sy * fitScale;
@@ -172,23 +145,16 @@ export function canvasSmartResize(
   return out.toDataURL('image/png');
 }
 
-// ── AI processing ─────────────────────────────────────────────────────────────
-
-/**
- * Ask Gemini to produce an adapted banner image.
- *
- * Sends the original image + a detailed Chinese prompt and expects an IMAGE
- * response back via the gemini-2.0-flash-preview-image-generation model.
- */
 async function aiAdaptImage(
   file: File,
   srcW: number,
   srcH: number,
   targetW: number,
   targetH: number,
-  onProgress: (msg: string) => void
+  onProgress: (msg: string) => void,
+  overrideKey?: string
 ): Promise<string | null> {
-  const apiKey = (typeof process !== 'undefined' && process.env?.API_KEY) || '';
+  const apiKey = overrideKey || (typeof process !== 'undefined' && process.env?.API_KEY) || '';
   if (!apiKey) return null;
 
   const ai = new GoogleGenAI({ apiKey });
@@ -197,10 +163,9 @@ async function aiAdaptImage(
 
   const srcRatioStr = `${srcW}×${srcH}`;
   const tgtRatioStr = `${targetW}×${targetH}`;
-  const isExpanding = targetW > srcW || targetH > srcH;
   const isWider = (targetW / targetH) > (srcW / srcH);
 
-  const hint = isExpanding
+  const hint = (targetW > srcW || targetH > srcH)
     ? `目標比原圖${isWider ? '更寬' : '更高'}，請向${isWider ? '左右兩側' : '上下'}延伸背景。`
     : `目標比原圖更窄，請智慧裁切不重要的邊緣，保留核心視覺元素。`;
 
@@ -248,24 +213,17 @@ async function aiAdaptImage(
   }
 }
 
-// ── Public API ────────────────────────────────────────────────────────────────
-
 export interface ProcessOptions {
   useAI: boolean;
+  apiKey?: string;
   onProgress: (msg: string) => void;
 }
 
-/**
- * Main entry point.
- *
- * 1. If useAI=true AND ratio factor >= 1.5, try Gemini image generation.
- * 2. On any failure (or useAI=false), fall back to canvasSmartResize.
- */
 export async function processImage(
   file: File,
   targetW: number,
   targetH: number,
-  { useAI, onProgress }: ProcessOptions
+  { useAI, apiKey, onProgress }: ProcessOptions
 ): Promise<string> {
   const srcUrl = URL.createObjectURL(file);
   const img = await loadImage(srcUrl);
@@ -279,7 +237,7 @@ export async function processImage(
 
   if (useAI && ratioFactor >= 1.5) {
     onProgress('啟動 AI 模型，分析構圖需求...');
-    const aiResult = await aiAdaptImage(file, srcW, srcH, targetW, targetH, onProgress);
+    const aiResult = await aiAdaptImage(file, srcW, srcH, targetW, targetH, onProgress, apiKey);
     if (aiResult) {
       onProgress('AI 處理完成！');
       return aiResult;
@@ -291,7 +249,6 @@ export async function processImage(
     onProgress('使用智慧裁切縮放處理...');
   }
 
-  // Canvas fallback
   const result = canvasSmartResize(img, srcW, srcH, targetW, targetH);
   onProgress('圖片處理完成！');
   return result;

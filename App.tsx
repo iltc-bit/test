@@ -1,12 +1,14 @@
 
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   Upload, Download, Loader2, CheckCircle2, AlertCircle,
-  Layers, Zap, ZapOff, LayoutGrid, RefreshCw, Info
+  Layers, Zap, ZapOff, LayoutGrid, RefreshCw, Info, Key, Eye, EyeOff
 } from 'lucide-react';
 import { PLATFORMS, PLATFORM_CATEGORIES } from './constants';
 import { Platform, ProcessState } from './types';
 import { processImage } from './imageProcessor';
+
+const LS_KEY = 'gemini_api_key';
 
 // ── Ratio-difficulty badge ────────────────────────────────────────────────────
 
@@ -45,8 +47,21 @@ const App: React.FC = () => {
   const [processState, setProcessState] = useState<ProcessState>({ status: 'idle', message: '' });
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [useAI, setUseAI] = useState(true);
+  const [apiKey, setApiKey] = useState('');
+  const [showKey, setShowKey] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const saved = localStorage.getItem(LS_KEY);
+    if (saved) setApiKey(saved);
+  }, []);
+
+  const handleApiKeyChange = (v: string) => {
+    setApiKey(v);
+    if (v) localStorage.setItem(LS_KEY, v);
+    else localStorage.removeItem(LS_KEY);
+  };
 
   // ── File handling ──────────────────────────────────────────────────────────
 
@@ -94,6 +109,7 @@ const App: React.FC = () => {
         selectedPlatform.height,
         {
           useAI,
+          apiKey: apiKey.trim() || undefined,
           onProgress: (msg) => setProcessState({ status: 'processing', message: msg }),
         }
       );
@@ -280,8 +296,8 @@ const App: React.FC = () => {
               <div className="flex items-start gap-2 text-xs text-gray-400 bg-gray-50 rounded-xl p-3">
                 <Info size={13} className="flex-shrink-0 mt-0.5" />
                 <span>
-                  <span className="font-bold text-green-600">相似</span>：比例接近，品質佳
-                  <span className="font-bold text-yellow-600">中等</span>：適度差異，啟用 AI 模式效果更好
+                  <span className="font-bold text-green-600">相似</span>：比例接近，品質佳　
+                  <span className="font-bold text-yellow-600">中等</span>：適度差異，啟用 AI 模式效果更好　
                   <span className="font-bold text-red-600">差異大</span>：比例差距大，強烈建議開啟 AI 模式
                 </span>
               </div>
@@ -297,6 +313,53 @@ const App: React.FC = () => {
           </div>
 
           <div className="p-6 space-y-5">
+            {/* Gemini API Key input */}
+            <div className="p-4 bg-amber-50 rounded-xl border border-amber-200 space-y-2.5">
+              <div className="flex items-center gap-2">
+                <Key size={15} className="text-amber-600 flex-shrink-0" />
+                <span className="text-sm font-bold text-amber-800">Gemini API Key</span>
+                <span className="ml-auto text-[11px] text-amber-500">儲存於瀏覽器，不傳送至任何伺服器</span>
+              </div>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type={showKey ? 'text' : 'password'}
+                    value={apiKey}
+                    onChange={e => handleApiKeyChange(e.target.value)}
+                    placeholder="貼上你的 Gemini API Key（AIza...）"
+                    className="w-full px-3 py-2 pr-9 text-sm rounded-lg border border-amber-300 bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 font-mono placeholder:font-sans placeholder:text-gray-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowKey(v => !v)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
+                {apiKey && (
+                  <button
+                    onClick={() => handleApiKeyChange('')}
+                    className="text-xs px-2 py-1 rounded-lg border border-amber-300 text-amber-700 hover:bg-amber-100 transition-colors"
+                  >
+                    清除
+                  </button>
+                )}
+              </div>
+              <p className="text-[11px] text-amber-600 leading-relaxed">
+                沒有 Key？前往{' '}
+                <a
+                  href="https://aistudio.google.com/app/apikey"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline font-medium"
+                >
+                  Google AI Studio
+                </a>{' '}
+                免費取得。填入後，AI 模式才能真正重新排版文字與元素。
+              </p>
+            </div>
+
             {/* AI toggle */}
             <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
               <div className="flex items-center gap-3">
