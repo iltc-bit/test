@@ -46,7 +46,6 @@ function findSalientCenter(
 
   for (let y = 1; y < SH - 1; y++) {
     for (let x = 1; x < SW - 1; x++) {
-      const i = (y * SW + x) * 4;
       const up  = ((y - 1) * SW + x) * 4;
       const dn  = ((y + 1) * SW + x) * 4;
       const lt  = (y * SW + (x - 1)) * 4;
@@ -155,16 +154,17 @@ export function canvasSmartResize(
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, outW, outH);
 
-    // Layer 3: sharp fitted original, centred on salient point
+    // Layer 3: sharp fitted original, centred on salient point.
+    // In bokeh branch fitW <= outW and fitH <= outH always holds (scale-to-fit),
+    // so valid paste ranges are [0, outW-fitW] and [0, outH-fitH].
     const { x: sx, y: sy } = findSalientCenter(img, srcW, srcH);
     const salientFitX = sx * fitScale;
     const salientFitY = sy * fitScale;
 
     let pasteX = Math.round(outW / 2 - salientFitX);
     let pasteY = Math.round(outH / 2 - salientFitY);
-    // Clamp so fitted image never leaves the canvas
-    pasteX = Math.max(Math.min(pasteX, 0), outW - fitW);
-    pasteY = Math.max(Math.min(pasteY, 0), outH - fitH);
+    pasteX = Math.max(0, Math.min(pasteX, outW - fitW));
+    pasteY = Math.max(0, Math.min(pasteY, outH - fitH));
 
     ctx.drawImage(img, pasteX, pasteY, fitW, fitH);
   }
